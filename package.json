@@ -1,40 +1,96 @@
 {
-  "name": "vscode-msk-kafka",
-  "displayName": "MSK Kafka Dashboard",
-  "version": "0.0.1",
-  "publisher": "exp.mlima",
-  "description": "Extensão para conectar ao MSK Kafka com suporte a AssumeRole.",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/mlima-experian/coder-aws-msk-dash-extension"
-  },
-  "engines": {
-    "vscode": "^1.80.0"
-  },
-  "main": "./out/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "mskKafka.openDashboard",
-        "title": "MSK Kafka: Abrir Dashboard",
-        "icon": "$(dashboard)"
-      }
-    ]
-  },
-  "devDependencies": {
-    "@types/node": "^26.4.0",
-    "@types/vscode": "^1.134.0",
-    "@vscode/vsce": "^3.9.2",
-    "esbuild": "^0.28.2",
-    "typescript": "^7.0.2"
-  },
-  "dependencies": {
-    "aws-msk-iam-sasl-signer-js": "^1.0.3",
-    "kafkajs": "^2.2.4"
-  },
-  "scripts": {
-    "vscode:prepublish": "tsc -p ./",
-    "compile": "tsc -p ./",
-    "package": "vsce package"
-  }
+    "name": "vscode-msk-kafka",
+    "displayName": "MSK Kafka Dashboard",
+    "version": "0.0.1",
+    "publisher": "mlima-exp",
+    "description": "Extensão para conectar ao MSK Kafka com suporte a AssumeRole.",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/mlima-experian/coder-aws-msk-dash-extension"
+    },
+    "icon": "images/icon.png",
+    "galleryBanner": {
+        "color": "#1d1c1c",
+        "theme": "dark"
+    },
+    "engines": {
+        "vscode": "^1.134.0"
+    },
+    "main": "./out/extension.js",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "msk-explorer",
+                    "title": "AWS MSK",
+                    "icon": "images/icon.svg"
+                }
+            ]
+        },
+        "views": {
+            "msk-explorer": [
+                {
+                    "id": "msk-clusters-view",
+                    "name": "Clusters Cadastrados",
+                    "icon": "images/icon.svg"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "aws-msk.registerCluster",
+                "title": "MSK: Cadastrar Cluster"
+            },
+            {
+                "command": "aws-msk.getMessages",
+                "title": "MSK: Obter Mensagens de Tópico"
+            },
+            {
+                "command": "aws-msk.refreshClusters",
+                "title": "Atualizar",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "aws-msk.deleteCluster",
+                "title": "Excluir Cluster",
+                "icon": "$(trash)"
+            }
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "aws-msk.refreshClusters",
+                    "when": "view == msk-clusters-view",
+                    "group": "navigation"
+                },
+                {
+                    "command": "aws-msk.registerCluster",
+                    "when": "view == msk-clusters-view",
+                    "group": "navigation"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "aws-msk.deleteCluster",
+                    "when": "view == msk-clusters-view && viewItem == msk-cluster",
+                    "group": "inline"
+                }
+            ]
+        }
+    },
+    "devDependencies": {
+        "@types/node": "^26.4.0",
+        "@types/vscode": "^1.134.0",
+        "@vscode/vsce": "^3.9.2",
+        "esbuild": "^0.28.2",
+        "typescript": "^7.0.2"
+    },
+    "dependencies": {
+        "aws-msk-iam-sasl-signer-js": "^1.0.3",
+        "kafkajs": "^2.2.4"
+    },
+    "scripts": {
+        "compile": "tsc -p ./",
+        "package": "vsce package"
+    }
 }
