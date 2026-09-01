@@ -49,6 +49,8 @@ jobs:
           echo "name=$(basename "$FILE")" >> "$GITHUB_OUTPUT"
 
       - name: Publish via OVSX CLI
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: npx ovsx publish ${{ steps.vsix.outputs.file }}
 
       - name: Create GitHub Release
