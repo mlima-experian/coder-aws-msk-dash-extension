@@ -1,7 +1,7 @@
 {
     "name": "vscode-msk-kafka",
     "displayName": "MSK Kafka Dashboard",
-    "version": "0.0.3",
+    "version": "0.0.4",
     "publisher": "mlima-exp",
     "description": "Extensão para conectar ao MSK Kafka com suporte a AssumeRole.",
     "repository": {
@@ -78,11 +78,6 @@
                 {
                     "command": "aws-msk.getMessages",
                     "when": "view == msk-clusters-view && viewItem == msk-cluster",
-                    "group": "inline"
-                },
-                {
-                    "command": "aws-msk.getMessages",
-                    "when": "view == msk-clusters-view && viewItem == msk-topic",
                     "group": "inline"
                 }
             ]

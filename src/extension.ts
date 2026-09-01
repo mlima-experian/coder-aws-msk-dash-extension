@@ -95,6 +95,11 @@ export function activate(context: vscode.ExtensionContext) {
             try {
                 const msgs = await MSKService.fetchMessages(cluster, normalizedTopic, 10);
 
+                if (msgs.length === 0) {
+                    vscode.window.showInformationMessage(`O tópico "${normalizedTopic}" não possui mensagens.`);
+                    return;
+                }
+
                 // Exibe o resultado em um documento JSON não salvo
                 const doc = await vscode.workspace.openTextDocument({
                     content: JSON.stringify(msgs, null, 2),
@@ -137,6 +142,11 @@ export function activate(context: vscode.ExtensionContext) {
         }, async () => {
             try {
                 const msgs = await MSKService.fetchMessages(selectedCluster, selectedTopic, 10);
+
+                if (msgs.length === 0) {
+                    vscode.window.showInformationMessage(`O tópico "${selectedTopic}" não possui mensagens.`);
+                    return;
+                }
 
                 const doc = await vscode.workspace.openTextDocument({
                     content: JSON.stringify(msgs, null, 2),
