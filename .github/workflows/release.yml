@@ -48,7 +48,13 @@ jobs:
           echo "name=$(basename "$FILE")" >> "$GITHUB_OUTPUT"
 
       - name: Publish via OVSX CLI
-        run: npx ovsx publish -p ${{ secrets.OPEN_VSX_TOKEN }}
+        run: |
+          FILE=$(find . -maxdepth 1 -type f -name "*.vsix" | head -n 1)
+          if [ -z "$FILE" ]; then
+            echo "VSIX not found"
+            exit 1
+          fi
+          npx ovsx publish $FILE -p "${{ secrets.OPEN_VSX_TOKEN }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
