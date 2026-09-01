@@ -1,0 +1,23 @@
+# Dependências do Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Diretórios de compilação do TypeScript/Build
+out/
+dist/
+build/
+.tscache/
+
+# Pacotes gerados da Extensão VS Code
+*.vsix
+
+# Diretório de testes de integração do VS Code
+.vscode-test/
+
+# Arquivos do Sistema Operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos de ambiente (se utilizar para testar credenciais locais)
+.env
