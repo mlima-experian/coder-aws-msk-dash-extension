@@ -12,6 +12,7 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    environment: deploy
 
     steps:
       - name: Checkout
@@ -48,7 +49,7 @@ jobs:
           echo "name=$(basename "$FILE")" >> "$GITHUB_OUTPUT"
 
       - name: Publish via OVSX CLI
-        run: npx ovsx publish ${{ steps.vsix.outputs.file }} -p "${{ secrets.OPEN_VSX_TOKEN }}"
+        run: npx ovsx publish ${{ steps.vsix.outputs.file }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
