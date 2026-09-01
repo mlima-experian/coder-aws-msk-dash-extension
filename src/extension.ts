@@ -32,19 +32,19 @@ export function activate(context: vscode.ExtensionContext) {
 
     // 1. Comando: Cadastrar Cluster
     const registerClusterCmd = vscode.commands.registerCommand('aws-msk.registerCluster', async () => {
-        const name = await vscode.window.showInputBox({ prompt: 'Nome do Cluster (Apelido)' });
+        const name = await vscode.window.showInputBox({ prompt: 'Nome do Cluster (Apelido)', ignoreFocusOut: true });
         const normalizedName = name?.trim();
         if (!normalizedName) return;
 
-        const region = await vscode.window.showInputBox({ prompt: 'Região AWS (ex: us-east-1)', value: 'sa-east-1' });
+        const region = await vscode.window.showInputBox({ prompt: 'Região AWS (ex: sa-east-1)', value: 'sa-east-1', ignoreFocusOut: true });
         const normalizedRegion = region?.trim();
         if (!normalizedRegion) return;
 
-        const roleArn = await vscode.window.showInputBox({ prompt: 'Role ARN para Assume Role (ex: arn:aws:iam::123456789012:role/MSKAccessRole)' });
+        const roleArn = await vscode.window.showInputBox({ prompt: 'Role ARN para Assume Role (ex: arn:aws:iam::123456789012:role/MSKAccessRole)', ignoreFocusOut: true });
         const normalizedRoleArn = roleArn?.trim();
         if (!normalizedRoleArn) return;
 
-        const brokersInput = await vscode.window.showInputBox({ prompt: 'Brokers (separados por vírgula com porta 9098 SASL/IAM)' });
+        const brokersInput = await vscode.window.showInputBox({ prompt: 'Brokers (separados por vírgula com porta 9098 SASL/IAM)', ignoreFocusOut: true });
         const brokers = (brokersInput ?? '')
             .split(',')
             .map(b => b.trim())
