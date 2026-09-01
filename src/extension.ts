@@ -7,6 +7,57 @@ export function activate(context: vscode.ExtensionContext) {
     const mskTreeProvider = new MSKTreeProvider(context);
     vscode.window.registerTreeDataProvider('msk-clusters-view', mskTreeProvider);
 
+    const output = vscode.window.createOutputChannel('AWS MSK');
+
+    /**
+     * Busca e exibe as mensagens de um tópico.
+     *
+     * Tópico vazio de verdade (high == low em todas as partições) é diferente de
+     * "não consegui ler": o segundo vira erro com o motivo, e não uma mensagem
+     * dizendo que o tópico está vazio.
+     */
+    const showTopicMessages = async (cluster: MSKClusterConfig, topic: string) => {
+        const settings = vscode.workspace.getConfiguration('awsMsk');
+        const maxMessages = settings.get<number>('maxMessages', 10);
+        const timeoutMs = settings.get<number>('fetchTimeoutMs', 30000);
+        const groupIdPrefix = settings.get<string>('consumerGroupPrefix', 'vscode-msk');
+
+        const result = await MSKService.fetchMessages(cluster, topic, {
+            maxMessages,
+            timeoutMs,
+            groupIdPrefix,
+            log: (message) => output.appendLine(message)
+        });
+
+        if (result.messages.length === 0) {
+            if (result.available === 0) {
+                vscode.window.showInformationMessage(`O tópico "${topic}" não possui mensagens.`);
+                return;
+            }
+
+            output.show(true);
+            const hint = result.mode === 'consumer-group'
+                ? `Verifique se a role tem kafka-cluster:ReadData no tópico e AlterGroup/DescribeGroup para o group id "${result.groupId}" — ajuste "awsMsk.consumerGroupPrefix" se a policy exigir outro prefixo.`
+                : 'Verifique se a role tem kafka-cluster:ReadData no tópico.';
+            throw new Error(
+                `O tópico "${topic}" tem ~${result.available} mensagem(ns) no broker, mas nenhuma foi lida` +
+                `${result.timedOut ? ` em ${timeoutMs}ms` : ''}. ${hint} Detalhes no Output "AWS MSK".`
+            );
+        }
+
+        if (result.timedOut) {
+            vscode.window.showWarningMessage(
+                `Busca em "${topic}" encerrada por timeout: ${result.messages.length} de ~${result.available} mensagem(ns) lidas.`
+            );
+        }
+
+        const doc = await vscode.workspace.openTextDocument({
+            content: JSON.stringify(result.messages, null, 2),
+            language: 'json'
+        });
+        await vscode.window.showTextDocument(doc, { preview: false });
+    };
+
     const deleteClusterCmd = vscode.commands.registerCommand('aws-msk.deleteCluster', async (node: vscode.TreeItem) => {
         const clusters = context.globalState.get<MSKClusterConfig[]>('msk_clusters', []);
 
@@ -93,19 +144,7 @@ export function activate(context: vscode.ExtensionContext) {
             cancellable: false
         }, async () => {
             try {
-                const msgs = await MSKService.fetchMessages(cluster, normalizedTopic, 10);
-
-                if (msgs.length === 0) {
-                    vscode.window.showInformationMessage(`O tópico "${normalizedTopic}" não possui mensagens.`);
-                    return;
-                }
-
-                // Exibe o resultado em um documento JSON não salvo
-                const doc = await vscode.workspace.openTextDocument({
-                    content: JSON.stringify(msgs, null, 2),
-                    language: 'json'
-                });
-                await vscode.window.showTextDocument(doc);
+                await showTopicMessages(cluster, normalizedTopic);
             } catch (err: any) {
                 vscode.window.showErrorMessage(`Erro ao consumir do MSK: ${err.message}`);
             }
@@ -141,19 +180,7 @@ export function activate(context: vscode.ExtensionContext) {
             cancellable: false
         }, async () => {
             try {
-                const msgs = await MSKService.fetchMessages(selectedCluster, selectedTopic, 10);
-
-                if (msgs.length === 0) {
-                    vscode.window.showInformationMessage(`O tópico "${selectedTopic}" não possui mensagens.`);
-                    return;
-                }
-
-                const doc = await vscode.workspace.openTextDocument({
-                    content: JSON.stringify(msgs, null, 2),
-                    language: 'json'
-                });
-
-                await vscode.window.showTextDocument(doc, { preview: false });
+                await showTopicMessages(selectedCluster, selectedTopic);
             } catch (err: any) {
                 vscode.window.showErrorMessage(`Erro ao consultar eventos recentes do MSK: ${err.message}`);
             }
@@ -164,7 +191,7 @@ export function activate(context: vscode.ExtensionContext) {
         mskTreeProvider.refresh();
     });
 
-    context.subscriptions.push(registerClusterCmd, getMessagesCmd, getRecentEventsCmd, refreshCmd, deleteClusterCmd);
+    context.subscriptions.push(output, registerClusterCmd, getMessagesCmd, getRecentEventsCmd, refreshCmd, deleteClusterCmd);
 }
 
 export function deactivate() { }

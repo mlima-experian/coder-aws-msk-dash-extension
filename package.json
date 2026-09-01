@@ -18,6 +18,26 @@
     },
     "main": "./out/extension.js",
     "contributes": {
+        "configuration": {
+            "title": "AWS MSK",
+            "properties": {
+                "awsMsk.consumerGroupPrefix": {
+                    "type": "string",
+                    "default": "vscode-msk",
+                    "description": "Prefixo do consumer group usado para ler mensagens. Ajuste caso a policy IAM do MSK restrinja os group ids permitidos (kafka-cluster:AlterGroup / DescribeGroup)."
+                },
+                "awsMsk.fetchTimeoutMs": {
+                    "type": "number",
+                    "default": 30000,
+                    "description": "Tempo máximo (ms) aguardando mensagens antes de encerrar a leitura."
+                },
+                "awsMsk.maxMessages": {
+                    "type": "number",
+                    "default": 10,
+                    "description": "Quantidade máxima de mensagens recentes lidas por tópico."
+                }
+            }
+        },
         "viewsContainers": {
             "activitybar": [
                 {
