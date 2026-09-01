@@ -44,6 +44,9 @@ jobs:
           echo "file=$FILE" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "$FILE")" >> "$GITHUB_OUTPUT"
 
+      - name: Publish via OVSX CLI
+        run: npx ovsx publish -p ${{ secrets.OPEN_VSX_TOKEN }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
