@@ -107,11 +107,54 @@ export function activate(context: vscode.ExtensionContext) {
         });
     });
 
+    const getRecentEventsCmd = vscode.commands.registerCommand('aws-msk.getRecentEvents', async (cluster?: MSKClusterConfig, topicArg?: string) => {
+        const clusters = context.globalState.get<MSKClusterConfig[]>('msk_clusters', []);
+        if (clusters.length === 0) {
+            vscode.window.showWarningMessage('Nenhum cluster MSK cadastrado. Execute "MSK: Cadastrar Cluster" primeiro.');
+            return;
+        }
+
+        const selectedCluster = cluster ?? await vscode.window.showQuickPick(clusters.map(c => c.name), {
+            placeHolder: 'Selecione o cluster MSK'
+        }).then((selectedName) => {
+            if (!selectedName) return undefined;
+            return clusters.find(c => c.name === selectedName);
+        });
+
+        if (!selectedCluster) return;
+
+        const selectedTopic = topicArg ?? await vscode.window.showQuickPick(
+            (await MSKService.listTopics(selectedCluster)).map(t => t),
+            { placeHolder: 'Selecione o tópico' }
+        );
+
+        if (!selectedTopic) return;
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Buscando eventos recentes de ${selectedTopic}...`,
+            cancellable: false
+        }, async () => {
+            try {
+                const msgs = await MSKService.fetchMessages(selectedCluster, selectedTopic, 10);
+
+                const doc = await vscode.workspace.openTextDocument({
+                    content: JSON.stringify(msgs, null, 2),
+                    language: 'json'
+                });
+
+                await vscode.window.showTextDocument(doc, { preview: false });
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Erro ao consultar eventos recentes do MSK: ${err.message}`);
+            }
+        });
+    });
+
     const refreshCmd = vscode.commands.registerCommand('aws-msk.refreshClusters', () => {
         mskTreeProvider.refresh();
     });
 
-    context.subscriptions.push(registerClusterCmd, getMessagesCmd, refreshCmd, deleteClusterCmd);
+    context.subscriptions.push(registerClusterCmd, getMessagesCmd, getRecentEventsCmd, refreshCmd, deleteClusterCmd);
 }
 
 export function deactivate() { }

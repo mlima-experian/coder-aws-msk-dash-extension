@@ -34,6 +34,22 @@ export class MSKService {
   }
 
   /**
+   * Lista os tópicos disponíveis no cluster.
+   */
+  public static async listTopics(config: MSKClusterConfig): Promise<string[]> {
+    const kafka = await this.createKafkaClient(config);
+    const admin = kafka.admin();
+
+    await admin.connect();
+    try {
+      const topics = await admin.listTopics();
+      return topics;
+    } finally {
+      await admin.disconnect();
+    }
+  }
+
+  /**
    * Consome mensagens recentes de um tópico
    */
   public static async fetchMessages(
@@ -54,7 +70,7 @@ export class MSKService {
       const timeout = setTimeout(async () => {
         await consumer.disconnect();
         resolve(messages);
-      }, 10000); 
+      }, 10000);
 
       consumer.run({
         eachMessage: async ({ message }) => {
@@ -71,7 +87,10 @@ export class MSKService {
             resolve(messages);
           }
         }
-      }).catch(reject);
+      }).catch((error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
     });
   }
 }

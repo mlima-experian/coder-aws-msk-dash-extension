@@ -74,6 +74,16 @@
                     "command": "aws-msk.deleteCluster",
                     "when": "view == msk-clusters-view && viewItem == msk-cluster",
                     "group": "inline"
+                },
+                {
+                    "command": "aws-msk.getMessages",
+                    "when": "view == msk-clusters-view && viewItem == msk-cluster",
+                    "group": "inline"
+                },
+                {
+                    "command": "aws-msk.getMessages",
+                    "when": "view == msk-clusters-view && viewItem == msk-topic",
+                    "group": "inline"
                 }
             ]
         }
