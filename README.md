@@ -247,6 +247,22 @@ AWS MSK Dashboard
 
 ---
 
+## 💾 Onde os dados ficam gravados
+
+Tudo fica na HOME do usuário, em `~/.vscode-msk-kafka`:
+
+```text
+~/.vscode-msk-kafka
+├── clusters.json                     # clusters cadastrados (editável à mão)
+└── topics
+    └── <cluster>/<topico>.json       # últimas mensagens lidas do tópico
+```
+
+- `clusters.json` é uma lista JSON de `{ name, region, roleArn, brokers }`. Clusters cadastrados em versões anteriores (que ficavam no `globalState` do VS Code) são migrados automaticamente na primeira execução.
+- Ao consultar um tópico, as mensagens são gravadas em `topics/<cluster>/<topico>.json` e o arquivo é aberto no editor — a aba leva o nome do tópico e uma nova consulta reaproveita a mesma aba.
+
+---
+
 ## 🛠️ Desenvolvimento
 
 Clone o projeto:

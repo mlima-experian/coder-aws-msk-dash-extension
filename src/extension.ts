@@ -1,13 +1,20 @@
 import * as vscode from 'vscode';
 import { MSKService, MSKClusterConfig } from './mskService';
 import { MSKTreeProvider } from './mskTreeProvider';
+import { ClusterStore, openTopicMessagesFile } from './clusterStore';
 
 export function activate(context: vscode.ExtensionContext) {
 
-    const mskTreeProvider = new MSKTreeProvider(context);
+    const output = vscode.window.createOutputChannel('AWS MSK');
+
+    // Clusters ficam em JSON na HOME; o globalState das versões antigas é migrado uma vez.
+    const store = new ClusterStore(context, (message) => output.appendLine(message));
+    const mskTreeProvider = new MSKTreeProvider(store);
     vscode.window.registerTreeDataProvider('msk-clusters-view', mskTreeProvider);
 
-    const output = vscode.window.createOutputChannel('AWS MSK');
+    store.migrateFromGlobalState()
+        .then(() => mskTreeProvider.refresh())
+        .catch((err: any) => output.appendLine(`Falha ao migrar clusters do globalState: ${err?.message ?? err}`));
 
     /**
      * Busca e exibe as mensagens de um tópico.
@@ -51,15 +58,16 @@ export function activate(context: vscode.ExtensionContext) {
             );
         }
 
-        const doc = await vscode.workspace.openTextDocument({
-            content: JSON.stringify(result.messages, null, 2),
-            language: 'json'
-        });
-        await vscode.window.showTextDocument(doc, { preview: false });
+        const doc = await openTopicMessagesFile(
+            cluster.name,
+            topic,
+            `${JSON.stringify(result.messages, null, 2)}\n`
+        );
+        output.appendLine(`[${topic}] ${result.messages.length} mensagem(ns) gravada(s) em ${doc.uri.fsPath}`);
     };
 
     const deleteClusterCmd = vscode.commands.registerCommand('aws-msk.deleteCluster', async (node: vscode.TreeItem) => {
-        const clusters = context.globalState.get<MSKClusterConfig[]>('msk_clusters', []);
+        const clusters = await store.list();
 
         // Pega o nome do cluster, seja via clique no botão (node.label) ou via Paleta de Comandos (QuickPick)
         let clusterName = typeof node?.label === 'string' ? node.label : undefined;
@@ -74,8 +82,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         const confirm = await vscode.window.showWarningMessage(`Deseja realmente remover o cluster "${clusterName}"?`, 'Sim', 'Não');
         if (confirm === 'Sim') {
-            const filteredClusters = clusters.filter(c => c.name !== clusterName);
-            await context.globalState.update('msk_clusters', filteredClusters);
+            await store.remove(clusterName);
             mskTreeProvider.refresh();
             vscode.window.showInformationMessage(`Cluster MSK "${clusterName}" foi removido.`);
         }
@@ -110,17 +117,17 @@ export function activate(context: vscode.ExtensionContext) {
             brokers
         };
 
-        const clusters = context.globalState.get<MSKClusterConfig[]>('msk_clusters', []);
-        clusters.push(config);
-        await context.globalState.update('msk_clusters', clusters);
+        await store.add(config);
 
-        vscode.window.showInformationMessage(`Cluster MSK "${name}" cadastrado com sucesso!`);
+        vscode.window.showInformationMessage(
+            `Cluster MSK "${normalizedName}" cadastrado em ${store.filePath}`
+        );
         mskTreeProvider.refresh();
     });
 
     // 2. Comando: Obter Mensagens
     const getMessagesCmd = vscode.commands.registerCommand('aws-msk.getMessages', async () => {
-        const clusters = context.globalState.get<MSKClusterConfig[]>('msk_clusters', []);
+        const clusters = await store.list();
         if (clusters.length === 0) {
             vscode.window.showWarningMessage('Nenhum cluster MSK cadastrado. Execute "MSK: Cadastrar Cluster" primeiro.');
             return;
@@ -152,7 +159,7 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     const getRecentEventsCmd = vscode.commands.registerCommand('aws-msk.getRecentEvents', async (cluster?: MSKClusterConfig, topicArg?: string) => {
-        const clusters = context.globalState.get<MSKClusterConfig[]>('msk_clusters', []);
+        const clusters = await store.list();
         if (clusters.length === 0) {
             vscode.window.showWarningMessage('Nenhum cluster MSK cadastrado. Execute "MSK: Cadastrar Cluster" primeiro.');
             return;

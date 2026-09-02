@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { MSKClusterConfig, MSKService } from './mskService';
+import { ClusterStore } from './clusterStore';
 
 type ClusterTreeItem = vscode.TreeItem & {
   cluster?: MSKClusterConfig;
@@ -10,7 +11,7 @@ export class MSKTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem>
   private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | void>();
   readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | void> = this._onDidChangeTreeData.event;
 
-  constructor(private context: vscode.ExtensionContext) {}
+  constructor(private store: ClusterStore) {}
 
   refresh(): void {
     this._onDidChangeTreeData.fire();
@@ -21,11 +22,12 @@ export class MSKTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem>
   }
 
   async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
-    const clusters = this.context.globalState.get<MSKClusterConfig[]>('msk_clusters', []);
-
     if (!element) {
+      const clusters = await this.store.list();
+
       if (clusters.length === 0) {
         const emptyItem = new vscode.TreeItem('Nenhum cluster cadastrado', vscode.TreeItemCollapsibleState.None);
+        emptyItem.tooltip = `Os clusters são gravados em ${this.store.filePath}`;
         return [emptyItem];
       }
 
