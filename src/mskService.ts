@@ -16,7 +16,37 @@ export interface MSKMessage {
   offset: string;
   key: MSKPayload;
   value: MSKPayload;
+  /** Data/hora legível no fuso local, derivada de `timestampMs`. */
   timestamp: string;
+  /** Unix epoch em ms, como o broker devolve; usado para ordenar sem perder precisão. */
+  timestampMs: string;
+}
+
+/**
+ * Converte o unixtime em ms do Kafka para `YYYY-MM-DD HH:mm:ss.SSS ±HH:MM` no
+ * fuso local, que é o formato que se lê direto no documento de mensagens.
+ *
+ * Timestamp ausente ou não-numérico volta como string vazia em vez de
+ * "Invalid Date" — inclusive o -1 que o Kafka usa para NO_TIMESTAMP.
+ */
+export function formatTimestamp(raw: string | number | null | undefined): string {
+  const ms = Number(raw);
+  if (raw === null || raw === undefined || raw === '' || !Number.isFinite(ms) || ms < 0) return '';
+
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const pad = (value: number, size = 2) => String(Math.abs(value)).padStart(size, '0');
+
+  // getTimezoneOffset() é minutos a subtrair do local para chegar em UTC: sinal invertido.
+  const offsetMinutes = -date.getTimezoneOffset();
+  const offset = `${offsetMinutes < 0 ? '-' : '+'}${pad(Math.trunc(offsetMinutes / 60))}:${pad(offsetMinutes % 60)}`;
+
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)} ` +
+    offset
+  );
 }
 
 /**
@@ -295,7 +325,8 @@ export class MSKService {
                   offset: String(record.offset),
                   key: parsePayload(record.key),
                   value: parsePayload(record.value),
-                  timestamp: String(record.timestamp)
+                  timestamp: formatTimestamp(record.timestamp),
+                  timestampMs: String(record.timestamp)
                 });
                 cursor.collected += 1;
               }
@@ -328,7 +359,7 @@ export class MSKService {
     log(`[${topic}] fetch direto retornou ${messages.length} mensagem(ns)`);
 
     const collected = messages
-      .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))
+      .sort((a, b) => Number(b.timestampMs) - Number(a.timestampMs))
       .slice(0, maxMessages);
 
     return { messages: collected, offsets: topicOffsets, available, timedOut, mode: 'direct' };
@@ -469,7 +500,8 @@ export class MSKService {
               offset: message.offset,
               key: parsePayload(message.key),
               value: parsePayload(message.value),
-              timestamp: message.timestamp
+              timestamp: formatTimestamp(message.timestamp),
+              timestampMs: String(message.timestamp)
             });
 
             const high = pending.get(partition);
@@ -488,7 +520,7 @@ export class MSKService {
 
     // Mais recentes primeiro, limitado ao total pedido.
     const collected = messages
-      .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))
+      .sort((a, b) => Number(b.timestampMs) - Number(a.timestampMs))
       .slice(0, maxMessages);
 
     return { messages: collected, offsets: topicOffsets, available, timedOut, mode: 'consumer-group', groupId };
