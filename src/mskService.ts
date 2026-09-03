@@ -1,4 +1,4 @@
-import { Kafka, Consumer } from 'kafkajs';
+import { Kafka, Consumer, ConfigResourceTypes } from 'kafkajs';
 import { generateAuthTokenFromRole } from 'aws-msk-iam-sasl-signer-js';
 
 export interface MSKClusterConfig {
@@ -75,6 +75,110 @@ export interface PartitionOffsets {
   low: number;
   high: number;
 }
+
+/**
+ * Converte uma duração em ms de config do Kafka para algo legível ("7 dias").
+ *
+ * `-1` é o valor que o Kafka usa para "sem limite" em retention.ms/segment.ms.
+ */
+export function formatDuration(raw: string | number | null | undefined): string {
+  const ms = Number(raw);
+  if (raw === null || raw === undefined || raw === '' || !Number.isFinite(ms)) return '';
+  if (ms < 0) return 'ilimitado';
+  if (ms === 0) return '0';
+
+  const units: Array<[string, number]> = [
+    ['dia(s)', 86400000],
+    ['hora(s)', 3600000],
+    ['minuto(s)', 60000],
+    ['segundo(s)', 1000]
+  ];
+
+  for (const [label, size] of units) {
+    if (ms >= size) {
+      const value = ms / size;
+      // Sem casa decimal quando é exato (7 dias), com uma casa quando não é.
+      return `${Number.isInteger(value) ? value : value.toFixed(1)} ${label}`;
+    }
+  }
+
+  return `${ms} ms`;
+}
+
+/** Tamanho em bytes de config do Kafka em formato legível; `-1` é sem limite. */
+export function formatBytes(raw: string | number | null | undefined): string {
+  const bytes = Number(raw);
+  if (raw === null || raw === undefined || raw === '' || !Number.isFinite(bytes)) return '';
+  if (bytes < 0) return 'ilimitado';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+
+  return `${Number.isInteger(value) ? value : value.toFixed(1)} ${units[unit]}`;
+}
+
+export interface TopicPartitionMetadata {
+  partition: number;
+  leader: number;
+  replicas: number[];
+  /** In-sync replicas: menor que `replicas` indica partição sub-replicada. */
+  isr: number[];
+  low: number;
+  high: number;
+  /** high - low: mensagens ainda no log, já descontada a retenção. */
+  messages: number;
+}
+
+export interface TopicMetadata {
+  cluster: string;
+  topic: string;
+  partitions: number;
+  /** Menor fator de replicação entre as partições. */
+  replicationFactor: number;
+  /** Partições em que ISR < replicas. */
+  underReplicatedPartitions: number[];
+  retention: {
+    ms?: string;
+    tempo?: string;
+    bytes?: string;
+    tamanho?: string;
+  };
+  cleanupPolicy?: string;
+  minInSyncReplicas?: string;
+  totalMessages: number;
+  /** Configs do tópico que diferem do default do broker. */
+  overrides: Record<string, string>;
+  /** Configs mais consultadas, mesmo quando estão no valor default. */
+  configsRelevantes: Record<string, string>;
+  detalhePartições: TopicPartitionMetadata[];
+}
+
+export interface TruncateTopicResult {
+  topic: string;
+  /** Mensagens que existiam no log antes do truncate. */
+  removed: number;
+  /** Offset (high watermark) até onde cada partição foi apagada. */
+  partitions: Array<{ partition: number; offset: number }>;
+}
+
+/** Configs sempre exibidas no relatório, mesmo quando estão no default. */
+const RELEVANT_TOPIC_CONFIGS = [
+  'retention.ms',
+  'retention.bytes',
+  'cleanup.policy',
+  'min.insync.replicas',
+  'max.message.bytes',
+  'segment.ms',
+  'segment.bytes',
+  'compression.type',
+  'delete.retention.ms',
+  'message.timestamp.type'
+];
 
 export interface FetchMessagesResult {
   messages: MSKMessage[];
@@ -157,6 +261,147 @@ export class MSKService {
         low: Number(p.low),
         high: Number(p.high)
       }));
+    } finally {
+      await admin.disconnect();
+    }
+  }
+
+  /**
+   * Reúne metadados do tópico: partições, réplicas/ISR, retenção e demais
+   * configs, além da contagem de mensagens ainda no log.
+   *
+   * `describeConfigs` exige kafka-cluster:DescribeTopicDynamicConfiguration; se
+   * a role não tiver a permissão, os metadados de partição ainda são devolvidos
+   * e as configs voltam vazias em vez de derrubar a consulta inteira.
+   */
+  public static async describeTopic(
+    config: MSKClusterConfig,
+    topic: string,
+    log: (message: string) => void = () => undefined
+  ): Promise<TopicMetadata> {
+    const kafka = await this.createKafkaClient(config);
+    const admin = kafka.admin();
+
+    await admin.connect();
+    try {
+      const metadata = await admin.fetchTopicMetadata({ topics: [topic] });
+      const topicMetadata = metadata.topics.find((t) => t.name === topic) ?? metadata.topics[0];
+      if (!topicMetadata) throw new Error(`Tópico "${topic}" não encontrado no cluster.`);
+
+      const rawOffsets = await admin.fetchTopicOffsets(topic);
+      const offsetsByPartition = new Map(
+        rawOffsets.map((p) => [p.partition, { low: Number(p.low), high: Number(p.high) }])
+      );
+
+      let entries: Record<string, string> = {};
+      let overrides: Record<string, string> = {};
+      try {
+        const described = await admin.describeConfigs({
+          includeSynonyms: false,
+          resources: [{ type: ConfigResourceTypes.TOPIC, name: topic }]
+        });
+
+        for (const entry of described.resources[0]?.configEntries ?? []) {
+          const value = entry.configValue ?? '';
+          entries[entry.configName] = value;
+          // configSource 1 = DYNAMIC_TOPIC_CONFIG: valor setado no tópico.
+          if (entry.isDefault === false || Number((entry as any).configSource) === 1) {
+            overrides[entry.configName] = value;
+          }
+        }
+      } catch (error: any) {
+        log(`[${topic}] não foi possível ler as configs: ${error?.message ?? error}`);
+      }
+
+      const partitions: TopicPartitionMetadata[] = topicMetadata.partitions
+        .map((p) => {
+          const offsets = offsetsByPartition.get(p.partitionId) ?? { low: 0, high: 0 };
+          return {
+            partition: p.partitionId,
+            leader: p.leader,
+            replicas: p.replicas,
+            isr: p.isr,
+            low: offsets.low,
+            high: offsets.high,
+            messages: Math.max(0, offsets.high - offsets.low)
+          };
+        })
+        .sort((a, b) => a.partition - b.partition);
+
+      const relevant: Record<string, string> = {};
+      for (const name of RELEVANT_TOPIC_CONFIGS) {
+        if (entries[name] !== undefined) relevant[name] = entries[name];
+      }
+
+      return {
+        cluster: config.name,
+        topic,
+        partitions: partitions.length,
+        replicationFactor: partitions.length
+          ? Math.min(...partitions.map((p) => p.replicas.length))
+          : 0,
+        underReplicatedPartitions: partitions
+          .filter((p) => p.isr.length < p.replicas.length)
+          .map((p) => p.partition),
+        retention: {
+          ms: entries['retention.ms'],
+          tempo: formatDuration(entries['retention.ms']) || undefined,
+          bytes: entries['retention.bytes'],
+          tamanho: formatBytes(entries['retention.bytes']) || undefined
+        },
+        cleanupPolicy: entries['cleanup.policy'],
+        minInSyncReplicas: entries['min.insync.replicas'],
+        totalMessages: partitions.reduce((total, p) => total + p.messages, 0),
+        overrides,
+        configsRelevantes: relevant,
+        detalhePartições: partitions
+      };
+    } finally {
+      await admin.disconnect();
+    }
+  }
+
+  /**
+   * Apaga todas as mensagens do tópico sem removê-lo, via DeleteRecords até o
+   * high watermark de cada partição.
+   *
+   * DeleteRecords só move o low watermark: consumidores com offset commitado
+   * continuam válidos e o tópico segue existindo com as mesmas configs.
+   */
+  public static async truncateTopic(
+    config: MSKClusterConfig,
+    topic: string,
+    log: (message: string) => void = () => undefined
+  ): Promise<TruncateTopicResult> {
+    const kafka = await this.createKafkaClient(config);
+    const admin = kafka.admin();
+
+    await admin.connect();
+    try {
+      const offsets = await admin.fetchTopicOffsets(topic);
+      const removed = offsets.reduce((total, p) => total + Math.max(0, Number(p.high) - Number(p.low)), 0);
+
+      // Só as partições com dado; DeleteRecords em partição vazia é ruído.
+      const targets = offsets
+        .filter((p) => Number(p.high) > Number(p.low))
+        .map((p) => ({ partition: p.partition, offset: Number(p.high) }));
+
+      if (targets.length === 0) {
+        log(`[${topic}] nada a truncar: todas as partições já estão vazias.`);
+        return { topic, removed: 0, partitions: [] };
+      }
+
+      await admin.deleteTopicRecords({
+        topic,
+        partitions: targets.map((t) => ({ partition: t.partition, offset: String(t.offset) }))
+      });
+
+      log(
+        `[${topic}] truncado até ${targets.map((t) => `p${t.partition}@${t.offset}`).join(' ')} ` +
+        `(~${removed} mensagem(ns) removida(s))`
+      );
+
+      return { topic, removed, partitions: targets };
     } finally {
       await admin.disconnect();
     }

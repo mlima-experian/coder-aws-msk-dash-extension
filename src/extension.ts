@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { MSKService, MSKClusterConfig } from './mskService';
-import { MSKTreeProvider } from './mskTreeProvider';
-import { ClusterStore, openTopicMessagesFile } from './clusterStore';
+import { MSKTreeProvider, ClusterTreeItem } from './mskTreeProvider';
+import { ClusterStore, openTopicMessagesFile, openTopicMetadataFile } from './clusterStore';
 
 export function activate(context: vscode.ExtensionContext) {
 
@@ -65,6 +65,112 @@ export function activate(context: vscode.ExtensionContext) {
         );
         output.appendLine(`[${topic}] ${result.messages.length} mensagem(ns) gravada(s) em ${doc.uri.fsPath}`);
     };
+
+    /**
+     * Descobre cluster/tópico do comando.
+     *
+     * Clique no botão inline manda o item da árvore (que já carrega os dois);
+     * pela Paleta de Comandos não vem argumento nenhum e é preciso perguntar.
+     */
+    const resolveTopicTarget = async (
+        node?: ClusterTreeItem
+    ): Promise<{ cluster: MSKClusterConfig; topic: string } | undefined> => {
+        if (node?.cluster && node.topic) return { cluster: node.cluster, topic: node.topic };
+
+        const clusters = await store.list();
+        if (clusters.length === 0) {
+            vscode.window.showWarningMessage('Nenhum cluster MSK cadastrado. Execute "MSK: Cadastrar Cluster" primeiro.');
+            return undefined;
+        }
+
+        let cluster = node?.cluster;
+        if (!cluster) {
+            const selectedName = await vscode.window.showQuickPick(clusters.map(c => c.name), {
+                placeHolder: 'Selecione o cluster MSK'
+            });
+            if (!selectedName) return undefined;
+            cluster = clusters.find(c => c.name === selectedName);
+            if (!cluster) return undefined;
+        }
+
+        const topics = await MSKService.listTopics(cluster);
+        const topic = await vscode.window.showQuickPick(topics, { placeHolder: 'Selecione o tópico' });
+        if (!topic) return undefined;
+
+        return { cluster, topic };
+    };
+
+    // 3. Comando: Metadados do Tópico (botão inline)
+    const topicMetadataCmd = vscode.commands.registerCommand('aws-msk.showTopicMetadata', async (node?: ClusterTreeItem) => {
+        const target = await resolveTopicTarget(node);
+        if (!target) return;
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Lendo metadados de ${target.topic}...`,
+            cancellable: false
+        }, async () => {
+            try {
+                const metadata = await MSKService.describeTopic(
+                    target.cluster,
+                    target.topic,
+                    (message) => output.appendLine(message)
+                );
+                await openTopicMetadataFile(
+                    target.cluster.name,
+                    target.topic,
+                    `${JSON.stringify(metadata, null, 2)}\n`
+                );
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Erro ao ler metadados do tópico: ${err.message}`);
+            }
+        });
+    });
+
+    // 4. Comando: Truncar Tópico (botão inline)
+    const truncateTopicCmd = vscode.commands.registerCommand('aws-msk.truncateTopic', async (node?: ClusterTreeItem) => {
+        const target = await resolveTopicTarget(node);
+        if (!target) return;
+
+        // Apagar mensagens é irreversível: confirmação modal, fora do canto da tela.
+        const confirm = await vscode.window.showWarningMessage(
+            `Apagar todas as mensagens do tópico "${target.topic}"?`,
+            {
+                modal: true,
+                detail: `Cluster: ${target.cluster.name}\n\nAs mensagens são removidas do log (DeleteRecords até o offset atual) e não podem ser recuperadas. O tópico e suas configurações são mantidos.`
+            },
+            'Truncar'
+        );
+        if (confirm !== 'Truncar') return;
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Truncando ${target.topic}...`,
+            cancellable: false
+        }, async () => {
+            try {
+                const result = await MSKService.truncateTopic(
+                    target.cluster,
+                    target.topic,
+                    (message) => output.appendLine(message)
+                );
+
+                if (result.removed === 0) {
+                    vscode.window.showInformationMessage(`O tópico "${target.topic}" já estava vazio.`);
+                    return;
+                }
+
+                vscode.window.showInformationMessage(
+                    `Tópico "${target.topic}" truncado: ~${result.removed} mensagem(ns) removida(s) em ${result.partitions.length} partição(ões).`
+                );
+            } catch (err: any) {
+                output.show(true);
+                vscode.window.showErrorMessage(
+                    `Erro ao truncar o tópico: ${err.message}. Verifique se a role tem kafka-cluster:DeleteTopicRecords (ou WriteData) no tópico.`
+                );
+            }
+        });
+    });
 
     const deleteClusterCmd = vscode.commands.registerCommand('aws-msk.deleteCluster', async (node: vscode.TreeItem) => {
         const clusters = await store.list();
@@ -198,7 +304,16 @@ export function activate(context: vscode.ExtensionContext) {
         mskTreeProvider.refresh();
     });
 
-    context.subscriptions.push(output, registerClusterCmd, getMessagesCmd, getRecentEventsCmd, refreshCmd, deleteClusterCmd);
+    context.subscriptions.push(
+        output,
+        registerClusterCmd,
+        getMessagesCmd,
+        getRecentEventsCmd,
+        refreshCmd,
+        deleteClusterCmd,
+        topicMetadataCmd,
+        truncateTopicCmd
+    );
 }
 
 export function deactivate() { }

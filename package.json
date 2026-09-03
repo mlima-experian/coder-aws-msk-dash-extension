@@ -1,7 +1,7 @@
 {
     "name": "vscode-msk-kafka",
     "displayName": "MSK Kafka Dashboard",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "publisher": "mlima-exp",
     "description": "Extensão para conectar ao MSK Kafka com suporte a AssumeRole.",
     "repository": {
@@ -74,6 +74,16 @@
                 "command": "aws-msk.deleteCluster",
                 "title": "Excluir Cluster",
                 "icon": "$(trash)"
+            },
+            {
+                "command": "aws-msk.showTopicMetadata",
+                "title": "MSK: Ver Metadados do Tópico",
+                "icon": "$(info)"
+            },
+            {
+                "command": "aws-msk.truncateTopic",
+                "title": "MSK: Truncar Tópico",
+                "icon": "$(clear-all)"
             }
         ],
         "menus": {
@@ -99,6 +109,16 @@
                     "command": "aws-msk.getMessages",
                     "when": "view == msk-clusters-view && viewItem == msk-cluster",
                     "group": "inline"
+                },
+                {
+                    "command": "aws-msk.showTopicMetadata",
+                    "when": "view == msk-clusters-view && viewItem == msk-topic",
+                    "group": "inline@1"
+                },
+                {
+                    "command": "aws-msk.truncateTopic",
+                    "when": "view == msk-clusters-view && viewItem == msk-topic",
+                    "group": "inline@2"
                 }
             ]
         }

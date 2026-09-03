@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { MSKClusterConfig, MSKService } from './mskService';
 import { ClusterStore } from './clusterStore';
 
-type ClusterTreeItem = vscode.TreeItem & {
+export type ClusterTreeItem = vscode.TreeItem & {
   cluster?: MSKClusterConfig;
   topic?: string;
 };
@@ -57,6 +57,7 @@ export class MSKTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem>
         return topics.map((topic) => {
           const item = new vscode.TreeItem(topic, vscode.TreeItemCollapsibleState.None) as ClusterTreeItem;
           item.description = 'tópico';
+          item.tooltip = `${topic}\nClique para ver os eventos recentes. Use os botões para metadados e truncate.`;
           item.iconPath = new vscode.ThemeIcon('symbol-namespace');
           item.contextValue = 'msk-topic';
           item.cluster = cluster;

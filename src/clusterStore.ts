@@ -139,8 +139,28 @@ export async function openTopicMessagesFile(
   topic: string,
   content: string
 ): Promise<vscode.TextDocument> {
+  return openTopicFile(clusterName, `${toSafeFileName(topic)}.json`, content);
+}
+
+/**
+ * Mesmo esquema do arquivo de mensagens, para os metadados do tópico. Sufixo
+ * próprio para os dois documentos poderem ficar abertos lado a lado.
+ */
+export async function openTopicMetadataFile(
+  clusterName: string,
+  topic: string,
+  content: string
+): Promise<vscode.TextDocument> {
+  return openTopicFile(clusterName, `${toSafeFileName(topic)}.metadata.json`, content);
+}
+
+async function openTopicFile(
+  clusterName: string,
+  fileName: string,
+  content: string
+): Promise<vscode.TextDocument> {
   const dir = path.join(TOPICS_DIR, toSafeFileName(clusterName));
-  const filePath = path.join(dir, `${toSafeFileName(topic)}.json`);
+  const filePath = path.join(dir, fileName);
   const uri = vscode.Uri.file(filePath);
 
   await fs.mkdir(dir, { recursive: true });
