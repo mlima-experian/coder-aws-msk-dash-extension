@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { MSKClusterConfig, MSKService } from './mskService';
+import { MSKClusterConfig, MSKService, describeAuthMode } from './mskService';
 import { ClusterStore } from './clusterStore';
 
 export type ClusterTreeItem = vscode.TreeItem & {
@@ -34,7 +34,7 @@ export class MSKTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem>
       return clusters.map((cluster) => {
         const item = new vscode.TreeItem(cluster.name, vscode.TreeItemCollapsibleState.Collapsed) as ClusterTreeItem;
         item.description = cluster.region;
-        item.tooltip = `Role: ${cluster.roleArn}\nBrokers: ${cluster.brokers.join(', ')}`;
+        item.tooltip = `${describeAuthMode(cluster)}\nBrokers: ${cluster.brokers.join(', ')}`;
         item.iconPath = new vscode.ThemeIcon('server');
         item.contextValue = 'msk-cluster';
         item.cluster = cluster;

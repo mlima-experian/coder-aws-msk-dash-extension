@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { MSKService, MSKClusterConfig } from './mskService';
+import { MSKService, MSKClusterConfig, describeAuthMode } from './mskService';
 import { MSKTreeProvider, ClusterTreeItem } from './mskTreeProvider';
 import { ClusterStore, openTopicMessagesFile, openTopicMetadataFile } from './clusterStore';
 
@@ -204,9 +204,23 @@ export function activate(context: vscode.ExtensionContext) {
         const normalizedRegion = region?.trim();
         if (!normalizedRegion) return;
 
-        const roleArn = await vscode.window.showInputBox({ prompt: 'Role ARN para Assume Role (ex: arn:aws:iam::123456789012:role/MSKAccessRole)', ignoreFocusOut: true });
-        const normalizedRoleArn = roleArn?.trim();
-        if (!normalizedRoleArn) return;
+        // Duas formas de autenticar: assumir uma role específica ou usar o que já
+        // está no ambiente (ex.: credenciais exportadas por `aws sts assume-role`).
+        const CURRENT_CREDENTIALS = 'Usar a role já assumida (credenciais atuais do ambiente)';
+        const ASSUME_ROLE = 'Assumir uma role (informar o ARN)';
+
+        const authMode = await vscode.window.showQuickPick([CURRENT_CREDENTIALS, ASSUME_ROLE], {
+            placeHolder: 'Como autenticar no cluster?',
+            ignoreFocusOut: true
+        });
+        if (!authMode) return;
+
+        let normalizedRoleArn: string | undefined;
+        if (authMode === ASSUME_ROLE) {
+            const roleArn = await vscode.window.showInputBox({ prompt: 'Role ARN para Assume Role (ex: arn:aws:iam::123456789012:role/MSKAccessRole)', ignoreFocusOut: true });
+            normalizedRoleArn = roleArn?.trim();
+            if (!normalizedRoleArn) return;
+        }
 
         const brokersInput = await vscode.window.showInputBox({ prompt: 'Brokers (separados por vírgula com porta 9098 SASL/IAM)', ignoreFocusOut: true });
         const brokers = (brokersInput ?? '')
@@ -219,14 +233,15 @@ export function activate(context: vscode.ExtensionContext) {
         const config: MSKClusterConfig = {
             name: normalizedName,
             region: normalizedRegion,
-            roleArn: normalizedRoleArn,
+            // Sem role escolhida o campo fica fora do JSON, e não como string vazia.
+            ...(normalizedRoleArn ? { roleArn: normalizedRoleArn } : {}),
             brokers
         };
 
         await store.add(config);
 
         vscode.window.showInformationMessage(
-            `Cluster MSK "${normalizedName}" cadastrado em ${store.filePath}`
+            `Cluster MSK "${normalizedName}" cadastrado em ${store.filePath} — ${describeAuthMode(config)}`
         );
         mskTreeProvider.refresh();
     });
@@ -253,7 +268,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: `Conectando via Assume Role e buscando mensagens de ${topic}...`,
+            title: `Conectando ao MSK e buscando mensagens de ${topic}...`,
             cancellable: false
         }, async () => {
             try {

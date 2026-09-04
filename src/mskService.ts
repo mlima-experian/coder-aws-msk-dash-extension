@@ -1,11 +1,23 @@
 import { Kafka, Consumer, ConfigResourceTypes } from 'kafkajs';
-import { generateAuthTokenFromRole } from 'aws-msk-iam-sasl-signer-js';
+import { generateAuthToken, generateAuthTokenFromRole } from 'aws-msk-iam-sasl-signer-js';
 
 export interface MSKClusterConfig {
   name: string;
   region: string;
-  roleArn: string;
+  /**
+   * ARN da role a assumir. Ausente/vazio significa usar as credenciais que já
+   * estão no ambiente (role já assumida via `aws sts assume-role`, instance
+   * profile, ECS/EKS task role), sem novo AssumeRole.
+   */
+  roleArn?: string;
   brokers: string[];
+}
+
+/** Texto curto de como o cluster autentica, para tooltips e mensagens. */
+export function describeAuthMode(config: MSKClusterConfig): string {
+  return config.roleArn?.trim()
+    ? `Assume Role: ${config.roleArn}`
+    : 'Credenciais atuais (role já assumida no ambiente)';
 }
 
 /** Objeto/array quando o payload é JSON; string crua caso contrário. */
@@ -205,8 +217,15 @@ export interface FetchMessagesOptions {
 export class MSKService {
   /**
    * Cria uma instância do KafkaJS configurada com a lib aws-msk-iam-sasl-signer-js
+   *
+   * Sem `roleArn` o token é assinado com as credenciais que a Default Credential
+   * Provider Chain já encontra no ambiente — é o caso de quem rodou
+   * `aws sts assume-role` e exportou as variáveis, ou de instance/task role: não
+   * há segundo AssumeRole e a role atual precisa ter acesso ao cluster.
    */
   public static async createKafkaClient(config: MSKClusterConfig): Promise<Kafka> {
+    const roleArn = config.roleArn?.trim();
+
     return new Kafka({
       clientId: 'vscode-msk-extension',
       brokers: config.brokers,
@@ -214,12 +233,13 @@ export class MSKService {
       sasl: {
         mechanism: 'oauthbearer',
         oauthBearerProvider: async () => {
-          // A lib resolve o Assume Role automaticamente via Default Credential Provider Chain
-          const authTokenResponse = await generateAuthTokenFromRole({
-            region: config.region,
-            awsRoleArn: config.roleArn,
-            awsRoleSessionName: 'VSCode-MSK-Session'
-          });
+          const authTokenResponse = roleArn
+            ? await generateAuthTokenFromRole({
+                region: config.region,
+                awsRoleArn: roleArn,
+                awsRoleSessionName: 'VSCode-MSK-Session'
+              })
+            : await generateAuthToken({ region: config.region });
 
           return { value: authTokenResponse.token };
         }

@@ -211,7 +211,14 @@ AWS MSK: Refresh Dashboard
 
 ## 🔐 Autenticação AWS
 
-A extensão utiliza a cadeia padrão de credenciais AWS, respeitando a seguinte ordem:
+No cadastro do cluster (**MSK: Cadastrar Cluster**) a extensão pergunta como autenticar:
+
+- **Usar a role já assumida (credenciais atuais do ambiente)** — o token SASL/OAUTHBEARER é assinado com as credenciais que já estão no ambiente, sem novo `AssumeRole`. Use quando você já rodou `aws sts assume-role` e exportou as variáveis, ou quando a própria instance/task role tem acesso ao MSK. Nesse caso a role atual precisa ter as permissões `kafka-cluster:*` no cluster.
+- **Assumir uma role (informar o ARN)** — a extensão faz o `AssumeRole` no ARN informado a cada renovação de token (sessão `VSCode-MSK-Session`).
+
+A escolha fica gravada por cluster em `clusters.json`: com `roleArn` preenchido é Assume Role, sem o campo são as credenciais atuais.
+
+Em ambos os casos as credenciais de partida vêm da cadeia padrão do AWS SDK, respeitando a seguinte ordem:
 
 1. Variáveis de ambiente
 2. AWS Profile
@@ -258,7 +265,7 @@ Tudo fica na HOME do usuário, em `~/.vscode-msk-kafka`:
     └── <cluster>/<topico>.json       # últimas mensagens lidas do tópico
 ```
 
-- `clusters.json` é uma lista JSON de `{ name, region, roleArn, brokers }`. Clusters cadastrados em versões anteriores (que ficavam no `globalState` do VS Code) são migrados automaticamente na primeira execução.
+- `clusters.json` é uma lista JSON de `{ name, region, roleArn?, brokers }`. O `roleArn` é opcional: sem ele a extensão autentica com a role já assumida no ambiente (veja [Autenticação AWS](#-autenticação-aws)). Clusters cadastrados em versões anteriores (que ficavam no `globalState` do VS Code) são migrados automaticamente na primeira execução.
 - Ao consultar um tópico, as mensagens são gravadas em `topics/<cluster>/<topico>.json` e o arquivo é aberto no editor — a aba leva o nome do tópico e uma nova consulta reaproveita a mesma aba.
 
 ---

@@ -36,7 +36,8 @@ function isValidCluster(value: any): value is MSKClusterConfig {
     !!value &&
     typeof value.name === 'string' &&
     typeof value.region === 'string' &&
-    typeof value.roleArn === 'string' &&
+    // roleArn é opcional: sem ele o cluster usa as credenciais já presentes no ambiente.
+    (value.roleArn === undefined || value.roleArn === null || typeof value.roleArn === 'string') &&
     Array.isArray(value.brokers) &&
     value.brokers.every((b: unknown) => typeof b === 'string')
   );
